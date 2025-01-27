@@ -10,9 +10,10 @@ load_dotenv()
 
 API_KEY = os.getenv("API_KEY")
 BASE_URL = "https://api.openweathermap.org/data/2.5/weather"
+AIR_QUALITY_URL = "http://api.openweathermap.org/data/2.5/air_pollution"
 GEO_API_KEY = os.getenv("GEO_API_KEY")
 GEO_BASE_URL = "http://api.ipstack.com/check"
-REPORTS_DIR = "weather_reports"  
+REPORTS_DIR = "weather_reports"
 
 class WeatherNotifier:
     def __init__(self, api_key):
@@ -37,11 +38,33 @@ class WeatherNotifier:
             city = data.get("name", "Unknown")
             temp = data["main"].get("temp", "N/A")
             desc = data["weather"][0].get("description", "N/A").capitalize()
-            return city, temp, desc
+            lat = data["coord"]["lat"]
+            lon = data["coord"]["lon"]
+            return city, temp, desc, lat, lon
         return "No data available."
 
-    def fetch_air_quality(self, city):
-        return "Moderate", 50  
+    def fetch_air_quality(self, lat, lon):
+        try:
+            params = {
+                'lat': lat,
+                'lon': lon,
+                'appid': self.api_key
+            }
+            response = requests.get(AIR_QUALITY_URL, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            aqi = data['list'][0]['main']['aqi']
+            aqi_desc = {
+                1: "Good",
+                2: "Fair",
+                3: "Moderate",
+                4: "Poor",
+                5: "Very Poor"
+            }
+            return aqi_desc.get(aqi, "Unknown"), aqi
+        except requests.exceptions.RequestException as e:
+            return "Error fetching air quality", None
 
     def activity_notifications(self, temp, desc):
         notifications = []
@@ -58,7 +81,7 @@ class WeatherApp:
 
         self.root.title("Weather Notifier")
         self.root.geometry("800x800")
-        self.root.configure(bg="#ADD8E6")  
+        self.root.configure(bg="#ADD8E6")
 
         self.city_label = tk.Label(root, text="Enter city name:", font=("Arial", 12), bg="#ADD8E6")
         self.city_label.pack(pady=10)
@@ -91,8 +114,8 @@ class WeatherApp:
         if city:
             data = self.notifier.fetch_weather(city)
             if data:
-                city_name, temp, desc = self.notifier.parse_weather(data)
-                air_quality_desc, air_quality_index = self.notifier.fetch_air_quality(city)
+                city_name, temp, desc, lat, lon = self.notifier.parse_weather(data)
+                air_quality_desc, air_quality_index = self.notifier.fetch_air_quality(lat, lon)
 
                 reports = self.get_city_reports(city)
                 report_info = "\n\nUser-submitted reports:\n" + "\n".join(reports) if reports else "\n\nNo user-submitted reports."
@@ -117,8 +140,8 @@ class WeatherApp:
             if city:
                 data = self.notifier.fetch_weather(city)
                 if data:
-                    city_name, temp, desc = self.notifier.parse_weather(data)
-                    air_quality_desc, air_quality_index = self.notifier.fetch_air_quality(city)
+                    city_name, temp, desc, lat, lon = self.notifier.parse_weather(data)
+                    air_quality_desc, air_quality_index = self.notifier.fetch_air_quality(lat, lon)
 
                     reports = self.get_city_reports(city)
                     report_info = "\n\nUser-submitted reports:\n" + "\n".join(reports) if reports else "\n\nNo user-submitted reports."
